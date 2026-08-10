@@ -10,6 +10,7 @@ const CHALLENGE_ID = 'demo-challenge-1';
 // generated fresh per page load and kept only in memory, exactly the
 // pattern used for visitor-scoped state in this environment.
 const VISITOR_ID = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()));
+let visitorAuthToken = null;
 
 let session = null; // { nonce, issued_at, server_sig }
 let myUserId = null;
@@ -42,6 +43,7 @@ async function api(path, opts = {}) {
     headers: {
       'Content-Type': 'application/json',
       'X-Demo-Visitor': VISITOR_ID,
+      ...(visitorAuthToken ? { 'X-Demo-Auth': visitorAuthToken } : {}),
       ...(opts.headers || {}),
     },
   });
@@ -235,8 +237,9 @@ function diffUpdatedUser(newRows) {
   return updated;
 }
 
-function connectLeaderboardStream() {
-  const es = new EventSource(`${API}/api/stream?challenge_id=${CHALLENGE_ID}&user_id=${encodeURIComponent(myUserId)}`);
+async function connectLeaderboardStream() {
+  const { stream_ticket } = await api('/api/stream-ticket', { method: 'POST' });
+  const es = new EventSource(`${API}/api/stream?challenge_id=${CHALLENGE_ID}&stream_ticket=${encodeURIComponent(stream_ticket)}`);
   es.addEventListener('leaderboard', (evt) => {
     const payload = JSON.parse(evt.data);
     const updatedUserId = diffUpdatedUser(payload.leaderboard);
@@ -348,6 +351,7 @@ async function init() {
 
   const identity = await api('/api/identify', { method: 'POST' });
   myUserId = identity.user_id;
+  visitorAuthToken = identity.auth_token;
 
   const subStatus = await api('/api/subscription-status').catch(() => null);
   if (subStatus) {
@@ -360,7 +364,7 @@ async function init() {
   lastRows = new Map(initial.leaderboard.map((r) => [r.user_id, r]));
   renderLeaderboard(initial.leaderboard);
 
-  connectLeaderboardStream();
+  connectLeaderboardStream().catch((err) => console.error('Could not connect to leaderboard updates:', err));
 
   document.getElementById('message-modal-close').addEventListener('click', closeMessageModal);
   document.getElementById('message-modal').addEventListener('click', (e) => {
