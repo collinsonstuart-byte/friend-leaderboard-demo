@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Daily Cryptogram — Friend Challenge (Live Preview)</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="page">
+    <header class="page-header">
+      <div class="logo">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-label="Cryptogram logo">
+          <rect x="1" y="1" width="26" height="26" rx="7" stroke="currentColor" stroke-width="2"/>
+          <path d="M8 18L12 10L16 18M9.5 15H14.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="20" cy="10" r="2" fill="currentColor"/>
+        </svg>
+        <span>Cryptogram</span>
+      </div>
+      <span class="badge">Live preview · friend challenge</span>
+    </header>
+
+    <main class="content">
+      <section class="panel puzzle-panel" id="puzzle-panel">
+        <div class="panel-heading">
+          <h1>Friday's Challenge</h1>
+          <div class="stat-row">
+            <div class="stat">
+              <span class="stat-label">Time</span>
+              <span class="stat-value" id="timer">0:00</span>
+            </div>
+            <div class="stat">
+              <span class="stat-label">Mistakes</span>
+              <span class="stat-value" id="mistake-count">0</span>
+            </div>
+          </div>
+        </div>
+
+        <div id="start-screen" class="start-screen">
+          <p class="start-copy">Solve the cryptogram before your friends do. Every result is verified and scored server-side — nothing here can be edited from the browser console.</p>
+          <button id="start-btn" class="btn-primary">Start Challenge</button>
+        </div>
+
+        <div id="puzzle-screen" class="puzzle-screen hidden">
+          <div class="cipher-display" id="cipher-display"></div>
+          <div class="letter-rows" id="letter-rows"></div>
+        </div>
+
+        <div id="result-screen" class="result-screen hidden">
+          <div class="result-badge">✓ Verified &amp; submitted</div>
+          <p id="result-copy"></p>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div id="leaderboard-root"></div>
+      </section>
+    </main>
+
+    <footer class="page-footer">
+      Backend logic (HMAC session signing, nonce replay protection, server-computed scoring, cached rankings) runs for real in this preview — friends' scores are simulated for demo purposes.
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
