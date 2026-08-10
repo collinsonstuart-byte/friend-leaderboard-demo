@@ -58,9 +58,17 @@
     </main>
 
     <footer class="page-footer">
-      Backend logic (HMAC session signing, nonce replay protection, server-computed scoring, cached rankings) runs for real in this preview — friends' scores are simulated for demo purposes.
+      Backend logic (HMAC session signing, nonce replay protection, server-computed scoring, cached rankings) runs for real in this preview — friends' scores are simulated for demo purposes. The friend-messaging subscription below is a demo simulation too — no real PayPal billing is connected yet.
     </footer>
   </div>
+
+  <div id="message-modal" class="message-modal hidden">
+    <div class="message-modal-card">
+      <button id="message-modal-close" class="modal-close" aria-label="Close">×</button>
+      <div id="message-modal-body"></div>
+    </div>
+  </div>
+  <div id="toast-container" class="toast-container"></div>
 
   <script src="app.js"></script>
 </body>

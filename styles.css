@@ -291,7 +291,7 @@ body {
 .lb-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .lb-row {
   display: grid;
-  grid-template-columns: 32px 32px 1fr auto auto;
+  grid-template-columns: 32px 32px 1fr auto auto auto;
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
@@ -312,3 +312,87 @@ body {
 .lb-empty { padding: 16px 0; font-size: 0.85rem; color: var(--text-muted); text-align: center; }
 .lb-skeleton-row { height: 40px; border-radius: 10px; margin-bottom: 6px; background: linear-gradient(90deg,#eee 25%,#f5f5f5 37%,#eee 63%); background-size: 400% 100%; animation: lb-shimmer 1.4s ease infinite; }
 @keyframes lb-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+
+/* --- Message-a-friend button + modal + toasts --- */
+.msg-btn {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: #fbfaf6;
+  cursor: pointer;
+  font-size: 0.8rem;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.msg-btn:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, white); }
+
+.message-modal {
+  position: fixed; inset: 0;
+  background: rgba(27, 27, 24, 0.45);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  z-index: 100;
+}
+.message-modal-card {
+  position: relative;
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 22px 20px;
+  width: 100%;
+  max-width: 380px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+}
+.modal-close {
+  position: absolute; top: 10px; right: 12px;
+  border: none; background: none; cursor: pointer;
+  font-size: 1.3rem; line-height: 1; color: var(--text-muted);
+  padding: 4px;
+}
+.modal-close:hover { color: var(--text); }
+.modal-title { font-size: 1rem; font-weight: 700; margin: 0 0 10px; padding-right: 20px; }
+.modal-copy { font-size: 0.88rem; color: var(--text); line-height: 1.5; margin: 0 0 10px; }
+.modal-note { font-size: 0.76rem; color: var(--text-muted); line-height: 1.5; margin: 8px 0 0; }
+.message-textarea {
+  width: 100%;
+  min-height: 90px;
+  resize: vertical;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  color: var(--text);
+  background: #fbfaf6;
+}
+.message-textarea:focus { outline: none; border-color: var(--accent); }
+.message-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 10px; gap: 10px;
+}
+.message-char-count { font-size: 0.72rem; color: var(--text-muted); }
+
+.toast-container {
+  position: fixed;
+  bottom: 16px; left: 0; right: 0;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 8px;
+  z-index: 200;
+  pointer-events: none;
+  padding: 0 16px;
+}
+.toast {
+  background: var(--accent-dark);
+  color: white;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  max-width: 380px;
+  width: 100%;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  animation: toast-in 0.25s ease;
+}
+.toast.toast-out { animation: toast-out 0.3s ease forwards; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes toast-out { to { opacity: 0; transform: translateY(10px); } }

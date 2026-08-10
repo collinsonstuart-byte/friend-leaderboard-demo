@@ -3,10 +3,6 @@
 // nonce-consumption / server-computed-scoring flow described in the
 // production design (functions/start-challenge-session.js, submit-score.js).
 
-// This is a static-only build deployed to Vercel. It calls the backend
-// that's already running on the published pplx.app link — there is no
-// server component in this Vercel deployment itself. pplx.app backend
-// ports are reached via a /port/<port>/ prefix rather than at the root.
 const API = 'https://daily-cryptogram.pplx.app/port/8000';
 const CHALLENGE_ID = 'demo-challenge-1';
 
@@ -20,6 +16,9 @@ let myUserId = null;
 let startTime = null;
 let timerInterval = null;
 let mistakes = 0;
+let subscriptionActive = false;
+let subscriptionPrice = 0.99;
+let subscriptionPeriod = 'month';
 
 const PUZZLE = {
   plaintext: 'KEEP GOING',
@@ -204,6 +203,7 @@ function renderLeaderboard(rows, justUpdatedUserId) {
                 <span class="lb-name">${escapeHtml(row.display_name)}${isSelf ? ' (you)' : ''}</span>
                 <span class="lb-time">${formatElapsed(row.elapsed_ms)}</span>
                 <span class="lb-score">${row.score.toLocaleString()} pts</span>
+                ${isSelf ? '' : `<button class="msg-btn" type="button" data-user-id="${escapeHtml(row.user_id)}" data-display-name="${escapeHtml(row.display_name)}" aria-label="Message ${escapeHtml(row.display_name)}" title="Message ${escapeHtml(row.display_name)}">✉️</button>`}
               </li>
             `;
           })
@@ -211,6 +211,10 @@ function renderLeaderboard(rows, justUpdatedUserId) {
       </ol>
     </div>
   `;
+
+  root.querySelectorAll('.msg-btn').forEach((btn) => {
+    btn.addEventListener('click', () => openMessageModal(btn.dataset.userId, btn.dataset.displayName));
+  });
 
   if (justUpdatedUserId) {
     const rowEl = root.querySelector(`[data-user-id="${justUpdatedUserId}"]`);
@@ -232,12 +236,109 @@ function diffUpdatedUser(newRows) {
 }
 
 function connectLeaderboardStream() {
-  const es = new EventSource(`${API}/api/stream?challenge_id=${CHALLENGE_ID}`);
-  es.onmessage = (evt) => {
+  const es = new EventSource(`${API}/api/stream?challenge_id=${CHALLENGE_ID}&user_id=${encodeURIComponent(myUserId)}`);
+  es.addEventListener('leaderboard', (evt) => {
     const payload = JSON.parse(evt.data);
     const updatedUserId = diffUpdatedUser(payload.leaderboard);
     renderLeaderboard(payload.leaderboard, updatedUserId);
-  };
+  });
+  es.addEventListener('friend-message', (evt) => {
+    const message = JSON.parse(evt.data);
+    showMessageToast(message);
+  });
+}
+
+// --- Custom message-to-a-friend (gated by $0.99/month subscription) ----
+
+function showMessageToast(message) {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.innerHTML = `<strong>${escapeHtml(message.from_display_name)}</strong> sent you a message:<br/>${escapeHtml(message.text)}`;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add('toast-out');
+    setTimeout(() => toast.remove(), 300);
+  }, 6000);
+}
+
+function closeMessageModal() {
+  document.getElementById('message-modal').classList.add('hidden');
+}
+
+function renderSubscribeGate(toDisplayName, onSubscribed) {
+  const body = document.getElementById('message-modal-body');
+  body.innerHTML = `
+    <h2 class="modal-title">Message ${escapeHtml(toDisplayName)}</h2>
+    <p class="modal-copy">Sending custom messages to friends is a subscriber feature — $${subscriptionPrice.toFixed(2)}/${subscriptionPeriod}.</p>
+    <p class="modal-note">This demo isn't wired up to real PayPal billing yet, so this button simulates a completed subscription for testing — no real charge happens.</p>
+    <button id="subscribe-demo-btn" class="btn-primary">Simulate subscribe (demo) — $${subscriptionPrice.toFixed(2)}/${subscriptionPeriod}</button>
+  `;
+  document.getElementById('subscribe-demo-btn').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.textContent = 'Activating…';
+    try {
+      const result = await api('/api/subscribe-demo', { method: 'POST' });
+      subscriptionActive = !!result.active;
+      onSubscribed();
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = `Simulate subscribe (demo) — $${subscriptionPrice.toFixed(2)}/${subscriptionPeriod}`;
+      alert(`Could not activate: ${err.message}`);
+    }
+  });
+}
+
+function renderComposeForm(toUserId, toDisplayName) {
+  const body = document.getElementById('message-modal-body');
+  body.innerHTML = `
+    <h2 class="modal-title">Message ${escapeHtml(toDisplayName)}</h2>
+    <textarea id="message-text" class="message-textarea" maxlength="200" placeholder="Say something to ${escapeHtml(toDisplayName)}…"></textarea>
+    <div class="message-footer">
+      <span id="message-char-count" class="message-char-count">0/200</span>
+      <button id="message-send-btn" class="btn-primary">Send</button>
+    </div>
+    <p id="message-status" class="modal-note"></p>
+  `;
+  const textarea = document.getElementById('message-text');
+  const charCount = document.getElementById('message-char-count');
+  textarea.addEventListener('input', () => {
+    charCount.textContent = `${textarea.value.length}/200`;
+  });
+  document.getElementById('message-send-btn').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const text = textarea.value.trim();
+    const status = document.getElementById('message-status');
+    if (!text) {
+      status.textContent = 'Write something first.';
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+    try {
+      await api('/api/messages/send', {
+        method: 'POST',
+        body: JSON.stringify({ to_user_id: toUserId, text }),
+      });
+      status.textContent = `Sent to ${toDisplayName}.`;
+      setTimeout(closeMessageModal, 1000);
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = 'Send';
+      status.textContent = err.message;
+    }
+  });
+}
+
+function openMessageModal(toUserId, toDisplayName) {
+  const modal = document.getElementById('message-modal');
+  modal.classList.remove('hidden');
+  if (subscriptionActive) {
+    renderComposeForm(toUserId, toDisplayName);
+  } else {
+    renderSubscribeGate(toDisplayName, () => renderComposeForm(toUserId, toDisplayName));
+  }
 }
 
 // --- Bootstrap ---------------------------------------------------------
@@ -248,11 +349,23 @@ async function init() {
   const identity = await api('/api/identify', { method: 'POST' });
   myUserId = identity.user_id;
 
+  const subStatus = await api('/api/subscription-status').catch(() => null);
+  if (subStatus) {
+    subscriptionActive = !!subStatus.active;
+    subscriptionPrice = subStatus.price_usd;
+    subscriptionPeriod = subStatus.period;
+  }
+
   const initial = await api(`/api/leaderboard?challenge_id=${CHALLENGE_ID}`);
   lastRows = new Map(initial.leaderboard.map((r) => [r.user_id, r]));
   renderLeaderboard(initial.leaderboard);
 
   connectLeaderboardStream();
+
+  document.getElementById('message-modal-close').addEventListener('click', closeMessageModal);
+  document.getElementById('message-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'message-modal') closeMessageModal();
+  });
 
   document.getElementById('start-btn').addEventListener('click', async () => {
     const btn = document.getElementById('start-btn');
