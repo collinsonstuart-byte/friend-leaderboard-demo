@@ -335,16 +335,19 @@ function closeMessageModal() {
   document.getElementById('message-modal').classList.add('hidden');
 }
 
-function renderSubscribeGate(prefillName, onSubscribed) {
+function renderSubscribeGate(prefillName, onSubscribed, initialStatus) {
   const body = document.getElementById('message-modal-body');
   const modeNote = liveMode
     ? `<p class="modal-note">This charges your card <strong>$${escapeHtml(challengePrice.toFixed(2))}</strong> for real, billed once by Stripe for this one challenge. Read the <a href="#" id="gate-terms-link">terms &amp; refund policy</a> before paying.</p>`
     : `<p class="modal-note">This charges a real card through Stripe's <strong>test mode</strong> — no actual money moves. Use test card <code>4242 4242 4242 4242</code>, any future expiry date, any CVC, any ZIP.</p>`;
+  const statusNote = initialStatus ? `<p class="modal-note">${escapeHtml(initialStatus)}</p>` : '';
   body.innerHTML = `
     <h2 class="modal-title">Challenge a Friend</h2>
     <p class="modal-copy">Sending a challenge link to a friend costs $${challengePrice.toFixed(2)} per challenge — pay only for the ones you send.</p>
+    ${statusNote}
     ${modeNote}
     <button id="subscribe-stripe-btn" class="btn-primary" ${stripeConfigured ? '' : 'disabled'}>Pay $${challengePrice.toFixed(2)} to send this challenge</button>
+    <p class="modal-note">After you pay, Stripe will bring you right back to this page to finish writing and sending your message — no need to click Pay again.</p>
     ${stripeConfigured ? '' : '<p class="modal-note">Stripe checkout isn\'t configured on this server right now.</p>'}
     ${liveMode ? '' : '<button id="subscribe-demo-btn" class="btn-secondary">Or simulate for testing (no card, no real charge)</button>'}
   `;
@@ -390,7 +393,7 @@ function renderSubscribeGate(prefillName, onSubscribed) {
   }
 }
 
-function renderComposeForm(prefillName) {
+function renderComposeForm(prefillName, initialStatus) {
   const body = document.getElementById('message-modal-body');
   body.innerHTML = `
     <h2 class="modal-title">Challenge a Friend</h2>
@@ -400,7 +403,7 @@ function renderComposeForm(prefillName) {
       <span id="message-char-count" class="message-char-count">0/200</span>
       <button id="message-send-btn" class="btn-primary">Create Challenge Link</button>
     </div>
-    <p id="message-status" class="modal-note"></p>
+    <p id="message-status" class="modal-note">${escapeHtml(initialStatus || '')}</p>
   `;
   const nameInput = document.getElementById('message-friend-name');
   const textarea = document.getElementById('message-text');
@@ -466,13 +469,13 @@ function renderComposeForm(prefillName) {
   });
 }
 
-function openMessageModal(prefillName) {
+function openMessageModal(prefillName, initialStatus) {
   const modal = document.getElementById('message-modal');
   modal.classList.remove('hidden');
   if (challengeCredits > 0) {
-    renderComposeForm(prefillName);
+    renderComposeForm(prefillName, initialStatus);
   } else {
-    renderSubscribeGate(prefillName, () => renderComposeForm(prefillName));
+    renderSubscribeGate(prefillName, () => renderComposeForm(prefillName), initialStatus);
   }
 }
 
@@ -676,20 +679,28 @@ async function init() {
   // of waiting on webhook delivery timing, then resume the compose modal
   // for whichever friend the visitor was messaging before they subscribed.
   const returnParams = new URLSearchParams(window.location.search);
+  let returnStatus = null;
   if (returnParams.has('subscribed')) {
     const sessionId = returnParams.get('session_id');
     if (returnParams.get('subscribed') === '1' && sessionId) {
       try {
         const statusResult = await api(`/api/checkout-session-status?session_id=${encodeURIComponent(sessionId)}`);
         challengeCredits = statusResult.credits || 0;
+        returnStatus = challengeCredits > 0
+          ? 'Payment received! Write your message below, then press "Create Challenge Link" to send it.'
+          : "Payment didn't go through — please try paying again below.";
       } catch (err) {
         console.error('Could not verify checkout session:', err);
+        returnStatus = "Couldn't confirm your payment — if you were charged, refresh this page before trying again.";
       }
+    } else if (returnParams.get('subscribed') === '0') {
+      returnStatus = 'Checkout was cancelled — no charge was made. Pay below whenever you\'re ready to send.';
     }
     const toDisplayName = returnParams.get('to_display_name');
     history.replaceState({}, '', window.location.pathname);
     if (toDisplayName) {
       window.__pendingMessageTarget = toDisplayName;
+      window.__pendingMessageStatus = returnStatus;
     }
   }
 
@@ -697,8 +708,10 @@ async function init() {
 
   if (window.__pendingMessageTarget) {
     const pendingName = window.__pendingMessageTarget;
+    const pendingStatus = window.__pendingMessageStatus;
     delete window.__pendingMessageTarget;
-    openMessageModal(pendingName);
+    delete window.__pendingMessageStatus;
+    openMessageModal(pendingName, pendingStatus);
   }
 
   document.getElementById('message-modal-close').addEventListener('click', closeMessageModal);
