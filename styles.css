@@ -327,6 +327,26 @@ body {
   line-height: 1.5;
 }
 
+/* --- Shared message link page (opened via #/m/<token>, no login) --- */
+.shared-message-card {
+  text-align: center;
+  padding: 28px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.shared-message-text {
+  font-size: 1.05rem;
+  line-height: 1.5;
+  margin: 12px 0 20px;
+  padding: 16px 18px;
+  background: var(--bg);
+  border-radius: 10px;
+  max-width: 420px;
+}
+.shared-message-cta { display: inline-block; text-decoration: none; }
+
 /* --- Leaderboard component (mirrors production frontend/leaderboard.css) --- */
 .lb-card { padding: 0; }
 .lb-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }

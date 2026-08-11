@@ -310,6 +310,31 @@ async function copyInviteLinkFallback(shareUrl) {
   }
 }
 
+// --- Share a sent message as a link (works with any texting/messaging app) ---
+// No login, no platform SDK — just a URL a friend can open to read the
+// message. Uses the native share sheet on mobile (which lists Messages,
+// WhatsApp, Messenger, Mail, etc. automatically) and falls back to
+// copy-to-clipboard on desktop or when the user cancels the sheet.
+async function shareMessageLink(shareUrl, toDisplayName) {
+  const shareText = `I sent you a message on Daily Cryptogram — open it here:`;
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: 'Daily Cryptogram', text: shareText, url: shareUrl });
+      return;
+    } catch (err) {
+      // AbortError = user cancelled the share sheet; fall through to copy
+      // for any other failure so the link isn't just lost.
+      if (err && err.name === 'AbortError') return;
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(shareUrl);
+    showToast(`Link copied! Paste it into a text, WhatsApp, or Messenger chat with ${escapeHtml(toDisplayName)}.`);
+  } catch {
+    showToast(`Copy this link and send it to ${escapeHtml(toDisplayName)}: <br/><code>${escapeHtml(shareUrl)}</code>`, 10000);
+  }
+}
+
 function closeMessageModal() {
   document.getElementById('message-modal').classList.add('hidden');
 }
@@ -383,12 +408,29 @@ function renderComposeForm(toUserId, toDisplayName) {
     btn.disabled = true;
     btn.textContent = 'Sending…';
     try {
-      await api('/api/messages/send', {
+      const result = await api('/api/messages/send', {
         method: 'POST',
         body: JSON.stringify({ to_user_id: toUserId, text }),
       });
-      status.textContent = `Sent to ${toDisplayName}.`;
-      setTimeout(closeMessageModal, 1000);
+      status.innerHTML = `Sent to ${escapeHtml(toDisplayName)} in-app.`;
+      if (result.share_url) {
+        btn.textContent = 'Send';
+        btn.disabled = false;
+        const footer = btn.closest('.message-footer');
+        let shareBtn = document.getElementById('message-share-link-btn');
+        if (!shareBtn) {
+          shareBtn = document.createElement('button');
+          shareBtn.id = 'message-share-link-btn';
+          shareBtn.type = 'button';
+          shareBtn.className = 'btn-secondary';
+          footer.insertBefore(shareBtn, btn);
+        }
+        shareBtn.textContent = 'Text/send this message →';
+        shareBtn.onclick = () => shareMessageLink(result.share_url, toDisplayName);
+        status.innerHTML = `Sent to ${escapeHtml(toDisplayName)} in-app. Want it delivered by text or messaging app too? Use the button above.`;
+      } else {
+        setTimeout(closeMessageModal, 1200);
+      }
     } catch (err) {
       btn.disabled = false;
       btn.textContent = 'Send';
@@ -409,7 +451,37 @@ function openMessageModal(toUserId, toDisplayName) {
 
 // --- Bootstrap ---------------------------------------------------------
 
+// Shared-message links look like #/m/<token> and need no identity/auth —
+// anyone with the link (a friend who got it by text, WhatsApp, etc.) can
+// open it and read just that one message. Handled before the normal app
+// boots so it works even for a first-time visitor with no session.
+async function renderSharedMessageIfPresent() {
+  const match = window.location.hash.match(/^#\/m\/([A-Za-z0-9_-]+)$/);
+  if (!match) return false;
+  const root = document.getElementById('leaderboard-root');
+  const puzzlePanel = document.getElementById('puzzle-panel');
+  if (puzzlePanel) puzzlePanel.style.display = 'none';
+  root.innerHTML = `<div class="lb-card"><div class="lb-skeleton-row"></div></div>`;
+  try {
+    const res = await fetch(`${API}/api/messages/shared/${encodeURIComponent(match[1])}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'This message link is no longer valid.');
+    root.innerHTML = `
+      <div class="lb-card shared-message-card">
+        <p class="modal-note">Message from</p>
+        <h2 class="modal-title">${escapeHtml(data.from_display_name)}</h2>
+        <p class="shared-message-text">${escapeHtml(data.text)}</p>
+        <a href="${window.location.pathname}" class="btn-secondary shared-message-cta">Play Daily Cryptogram →</a>
+      </div>`;
+  } catch (err) {
+    root.innerHTML = `<div class="lb-card"><p class="modal-note">${escapeHtml(err.message || 'This message link is no longer valid.')}</p><a href="${window.location.pathname}" class="btn-secondary">Go to Daily Cryptogram →</a></div>`;
+  }
+  return true;
+}
+
 async function init() {
+  if (await renderSharedMessageIfPresent()) return;
+
   document.getElementById('leaderboard-root').innerHTML = `<div class="lb-card"><div class="lb-skeleton-row"></div><div class="lb-skeleton-row"></div><div class="lb-skeleton-row"></div></div>`;
 
   const identity = await api('/api/identify', { method: 'POST' });
