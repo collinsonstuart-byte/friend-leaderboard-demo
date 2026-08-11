@@ -354,8 +354,13 @@ function renderComposeForm(prefillName) {
     charCount.textContent = `${textarea.value.length}/200`;
   });
   (nameInput.value ? textarea : nameInput).focus();
+  let justSent = false;
   document.getElementById('message-send-btn').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
+    if (justSent) {
+      renderComposeForm();
+      return;
+    }
     const toDisplayName = nameInput.value.trim();
     const text = textarea.value.trim();
     const status = document.getElementById('message-status');
@@ -376,9 +381,11 @@ function renderComposeForm(prefillName) {
         method: 'POST',
         body: JSON.stringify({ to_display_name: toDisplayName, text }),
       });
-      btn.textContent = 'Create Challenge Link';
       btn.disabled = false;
       if (result.share_url) {
+        justSent = true;
+        nameInput.disabled = true;
+        textarea.disabled = true;
         const footer = btn.closest('.message-footer');
         let shareBtn = document.getElementById('message-share-link-btn');
         if (!shareBtn) {
@@ -390,7 +397,10 @@ function renderComposeForm(prefillName) {
         }
         shareBtn.textContent = 'Send it →';
         shareBtn.onclick = () => shareMessageLink(result.share_url, toDisplayName);
-        status.innerHTML = `Challenge ready for ${escapeHtml(toDisplayName)}. Tap "Send it" to deliver it by text, WhatsApp, Messenger, or however you like.`;
+        btn.textContent = 'Send Another Message';
+        status.innerHTML = `Challenge ready for ${escapeHtml(toDisplayName)}. Tap "Send it" to deliver it by text, WhatsApp, Messenger, or however you like. You're subscribed, so you can send as many as you like.`;
+      } else {
+        btn.textContent = 'Create Challenge Link';
       }
     } catch (err) {
       btn.disabled = false;
