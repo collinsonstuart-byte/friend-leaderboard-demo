@@ -3,7 +3,7 @@
 // nonce-consumption / server-computed-scoring flow described in the
 // production design (functions/start-challenge-session.js, submit-score.js).
 
-const API = 'https://daily-cryptogram-v3.pplx.app/port/8000';
+const API = 'https://daily-cryptogram-v4.pplx.app/port/8000';
 const CHALLENGE_ID = 'demo-challenge-1';
 
 // Every browser tab keeps its own in-memory identity for the life of the
