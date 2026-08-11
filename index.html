@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>Daily Cryptogram — Friend Challenge (Live Preview)</title>
+<title>Daily Cryptogram — Beat Your Friends, One Puzzle at a Time</title>
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -22,14 +22,14 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M22 12.06C22 6.5 17.52 2 12 2S2 6.5 2 12.06c0 5 3.66 9.15 8.44 9.94v-7.03H7.9v-2.91h2.54V9.85c0-2.5 1.49-3.89 3.77-3.89 1.09 0 2.23.2 2.23.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56v1.88h2.78l-.44 2.91h-2.34V22c4.78-.79 8.44-4.94 8.44-9.94Z"/></svg>
           Invite friends
         </button>
-        <span class="badge">Live preview · friend challenge</span>
+        <span class="badge">New puzzle every day</span>
       </div>
     </header>
 
     <main class="content">
       <section class="panel puzzle-panel" id="puzzle-panel">
         <div class="panel-heading">
-          <h1>Friday's Challenge</h1>
+          <h1>Today's Cryptogram</h1>
           <div class="stat-row">
             <div class="stat">
               <span class="stat-label">Time</span>
@@ -43,8 +43,8 @@
         </div>
 
         <div id="start-screen" class="start-screen">
-          <p class="start-copy">Solve the cryptogram before your friends do. Every result is verified and scored server-side — nothing here can be edited from the browser console.</p>
-          <button id="start-btn" class="btn-primary">Start Challenge</button>
+          <p class="start-copy">Crack today's hidden quote before your friends do. Every score is verified server-side, so bragging rights are always earned.</p>
+          <button id="start-btn" class="btn-primary">Start Today's Puzzle</button>
         </div>
 
         <div id="puzzle-screen" class="puzzle-screen hidden">
@@ -58,13 +58,13 @@
         </div>
       </section>
 
-      <section class="panel">
+      <section class="panel pitch-panel">
         <div id="leaderboard-root"></div>
       </section>
     </main>
 
     <footer class="page-footer">
-      Backend logic (HMAC session signing, nonce replay protection, server-computed scoring, cached rankings) runs for real in this preview — friends' scores are simulated for demo purposes. The friend-messaging subscription uses a real Stripe Checkout flow in test mode — no real money moves, but the checkout and billing logic are genuine.
+      Every score is signed and verified server-side — no editing your time from the console. Challenge subscriptions run on Stripe in test mode for this preview, so checkout is real but no money moves.
     </footer>
   </div>
 
