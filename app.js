@@ -3,7 +3,7 @@
 // nonce-consumption / server-computed-scoring flow described in the
 // production design (functions/start-challenge-session.js, submit-score.js).
 
-const API = 'https://daily-cryptogram-v2.pplx.app/port/8000';
+const API = 'https://daily-cryptogram-v3.pplx.app/port/8000';
 const CHALLENGE_ID = 'demo-challenge-1';
 
 // Every browser tab keeps its own in-memory identity for the life of the
@@ -27,21 +27,76 @@ let subscriptionPeriod = 'month';
 let stripeConfigured = true;
 let liveMode = false; // true once the server is wired to real (sk_live_) Stripe keys
 
-const PUZZLE = {
-  plaintext: 'KEEP GOING',
-  // cipher letter -> { correct plaintext letter, choice order }
-  rows: [
-    { cipher: 'Q', correct: 'K', choices: ['M', 'K', 'Q'] },
-    { cipher: 'Z', correct: 'E', choices: ['Z', 'S', 'E'] },
-    { cipher: 'L', correct: 'P', choices: ['D', 'P', 'L'] },
-    { cipher: 'V', correct: 'G', choices: ['R', 'G', 'V'] },
-    { cipher: 'B', correct: 'O', choices: ['O', 'C', 'B'] },
-    { cipher: 'Y', correct: 'I', choices: ['U', 'I', 'Y'] },
-    { cipher: 'R', correct: 'N', choices: ['F', 'R', 'N'] },
-  ],
-};
-const PLAIN_TO_CIPHER = Object.fromEntries(PUZZLE.rows.map((r) => [r.correct, r.cipher]));
+// Today's puzzle is fetched from the server (see fetchQuoteOfTheDay) so
+// every visitor on the same calendar day gets the same hand-picked quote
+// and the same substitution cipher — the server is the source of truth,
+// this is just filled in once at load time before the start screen shows.
+let PUZZLE = { plaintext: '', author: '', rows: [] };
+let PLAIN_TO_CIPHER = {};
 const solvedLetters = new Set();
+
+// Builds a random letter->letter substitution cipher (no letter maps to
+// itself) and the multiple-choice rows for one unique letter in `text`,
+// mirroring the server's buildPuzzleRows/buildSubstitutionCipher used for
+// friend messages — kept client-side here since the daily puzzle's own
+// score-signing never depends on which letters were actually used.
+function buildDailyPuzzle(text, author) {
+  const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+  const usedLetters = [...new Set(text.toUpperCase().split('').filter((ch) => ALPHABET.includes(ch)))];
+  // Assign each used plaintext letter a distinct cipher letter (never itself).
+  const available = ALPHABET.filter((l) => !usedLetters.includes(l));
+  const plainToCipher = {};
+  const assigned = new Set();
+  for (const letter of usedLetters) {
+    let pick;
+    const pool = available.filter((l) => !assigned.has(l));
+    if (pool.length) {
+      pick = pool[Math.floor(Math.random() * pool.length)];
+    } else {
+      // Fallback: extremely rare (25+ unique letters used) — reuse ALPHABET
+      // minus letter itself and already-assigned cipher letters.
+      const fallbackPool = ALPHABET.filter((l) => l !== letter && !assigned.has(l));
+      pick = fallbackPool[Math.floor(Math.random() * fallbackPool.length)];
+    }
+    assigned.add(pick);
+    plainToCipher[letter] = pick;
+  }
+  const rows = usedLetters.map((correct) => {
+    const cipher = plainToCipher[correct];
+    const decoyPool = ALPHABET.filter((l) => l !== correct && l !== cipher);
+    const decoys = [];
+    while (decoys.length < 2 && decoyPool.length) {
+      const idx = Math.floor(Math.random() * decoyPool.length);
+      decoys.push(decoyPool.splice(idx, 1)[0]);
+    }
+    const choices = [correct, ...decoys];
+    for (let i = choices.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [choices[i], choices[j]] = [choices[j], choices[i]];
+    }
+    return { cipher, correct, choices };
+  });
+  return { plaintext: text.toUpperCase(), author: author || '', rows, plainToCipher };
+}
+
+async function fetchQuoteOfTheDay() {
+  try {
+    const quote = await api('/api/quote-of-the-day');
+    const built = buildDailyPuzzle(quote.text, quote.author);
+    PUZZLE = { plaintext: built.plaintext, author: built.author, rows: built.rows };
+    PLAIN_TO_CIPHER = built.plainToCipher;
+  } catch (err) {
+    // Fall back to a fixed phrase if the endpoint is unreachable, so the
+    // puzzle still works even if quote fetching fails for some reason.
+    const built = buildDailyPuzzle('KEEP GOING', 'Unknown');
+    PUZZLE = { plaintext: built.plaintext, author: built.author, rows: built.rows };
+    PLAIN_TO_CIPHER = built.plainToCipher;
+  }
+  const teaser = document.getElementById('quote-author-teaser');
+  if (teaser) {
+    teaser.textContent = PUZZLE.author ? `Today's quote is attributed to ${PUZZLE.author}.` : '';
+  }
+}
 
 async function api(path, opts = {}) {
   const res = await fetch(`${API}${path}`, {
@@ -170,7 +225,8 @@ async function onPuzzleComplete() {
         mistakes,
       }),
     });
-    resultCopy.innerHTML = `Solved in <strong>${formatElapsed(result.elapsed_ms)}</strong> with <strong>${result.mistakes}</strong> mistake${result.mistakes === 1 ? '' : 's'}.<br/>Server-verified score: <strong>${result.score.toLocaleString()} pts</strong>`;
+    const authorLine = PUZZLE.author ? `<br/><span class="result-quote-author">\u2014 ${escapeHtml(PUZZLE.author)}</span>` : '';
+    resultCopy.innerHTML = `Solved in <strong>${formatElapsed(result.elapsed_ms)}</strong> with <strong>${result.mistakes}</strong> mistake${result.mistakes === 1 ? '' : 's'}.<br/>Server-verified score: <strong>${result.score.toLocaleString()} pts</strong>${authorLine}`;
   } catch (err) {
     resultCopy.textContent = `Submission rejected: ${err.message}`;
   }
@@ -585,6 +641,16 @@ async function init() {
   const identity = await api('/api/identify', { method: 'POST' });
   myUserId = identity.user_id;
   visitorAuthToken = identity.auth_token;
+
+  if (identity.quote_of_the_day) {
+    const built = buildDailyPuzzle(identity.quote_of_the_day.text, identity.quote_of_the_day.author);
+    PUZZLE = { plaintext: built.plaintext, author: built.author, rows: built.rows };
+    PLAIN_TO_CIPHER = built.plainToCipher;
+    const teaser = document.getElementById('quote-author-teaser');
+    if (teaser) teaser.textContent = PUZZLE.author ? `Today's quote is attributed to ${PUZZLE.author}.` : '';
+  } else {
+    await fetchQuoteOfTheDay();
+  }
 
   const subStatus = await api('/api/subscription-status').catch(() => null);
   if (subStatus) {
