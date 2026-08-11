@@ -345,7 +345,14 @@ body {
   border-radius: 10px;
   max-width: 420px;
 }
-.shared-message-cta { display: inline-block; text-decoration: none; }
+.shared-message-hint {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin: 4px 0 18px;
+  max-width: 380px;
+}
+.shared-message-card .letter-rows { width: 100%; max-width: 340px; margin-bottom: 4px; }
+.shared-message-cta { display: inline-block; text-decoration: none; margin-top: 16px; }
 
 /* --- Marketable pitch panel (replaces friends/rankings list) --- */
 .pitch-card { padding: 0; }

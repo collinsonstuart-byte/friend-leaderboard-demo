@@ -444,24 +444,125 @@ function openTermsModal(onBack) {
 // anyone with the link (a friend who got it by text, WhatsApp, etc.) can
 // open it and read just that one message. Handled before the normal app
 // boots so it works even for a first-time visitor with no session.
+// A shared friend message arrives as ciphertext + puzzle rows only —
+// the plaintext is never in this payload. The recipient solves the
+// substitution cipher letter-by-letter (same mechanic as the daily
+// puzzle) and the server reveals the plaintext only once every row is
+// verified solved server-side.
+function renderMessagePuzzle(root, token, data) {
+  const solvedCipherLetters = new Set();
+  const solveToken = data.solve_token;
+
+  function cipherBoxesHtml() {
+    return data.cipher_text
+      .split('')
+      .map((ch) => {
+        const upper = ch.toUpperCase();
+        if (upper === ' ') return `<div class="cipher-box space"></div>`;
+        if (!/[A-Z]/.test(upper)) {
+          return `<div class="cipher-box"><span class="plain">${escapeHtml(ch)}</span></div>`;
+        }
+        const solved = solvedCipherLetters.has(upper);
+        return `
+          <div class="cipher-box${solved ? ' solved' : ''}">
+            <span class="plain">${solved ? escapeHtml(ch) : ''}</span>
+            <span class="cipher">${escapeHtml(upper)}</span>
+          </div>`;
+      })
+      .join('');
+  }
+
+  function letterRowsHtml() {
+    return data.puzzle_rows
+      .map((row) => {
+        const solved = solvedCipherLetters.has(row.cipher);
+        return `
+          <div class="letter-row${solved ? ' solved' : ''}">
+            <div class="row-cipher-letter">${escapeHtml(row.cipher)}</div>
+            <div class="row-choices">
+              ${row.choices
+                .map((c) => `<button class="choice-btn" data-cipher="${escapeHtml(row.cipher)}" data-choice="${escapeHtml(c)}" ${solved ? 'disabled' : ''}>${escapeHtml(c)}</button>`)
+                .join('')}
+            </div>
+          </div>`;
+      })
+      .join('');
+  }
+
+  function renderPuzzle() {
+    root.innerHTML = `
+      <div class="lb-card shared-message-card">
+        <p class="modal-note">Encrypted message from</p>
+        <h2 class="modal-title">${escapeHtml(data.from_display_name)}</h2>
+        <p class="shared-message-hint">Solve the cryptogram to reveal it — same cipher as the daily puzzle.</p>
+        <div class="cipher-display" id="msg-cipher-display">${cipherBoxesHtml()}</div>
+        <div class="letter-rows" id="msg-letter-rows">${letterRowsHtml()}</div>
+        <div id="msg-reveal-slot"></div>
+      </div>`;
+
+    root.querySelectorAll('.choice-btn').forEach((btn) => {
+      btn.addEventListener('click', onGuess);
+    });
+  }
+
+  async function onGuess(e) {
+    const btn = e.currentTarget;
+    const cipher = btn.dataset.cipher;
+    const choice = btn.dataset.choice;
+    btn.disabled = true;
+    try {
+      const res = await fetch(`${API}/api/messages/shared/${encodeURIComponent(solveToken)}/guess`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cipher, guess: choice }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Could not check that guess.');
+
+      if (result.correct) {
+        solvedCipherLetters.add(cipher);
+        renderPuzzle();
+        if (result.solved) {
+          const slot = document.getElementById('msg-reveal-slot');
+          if (slot) {
+            slot.innerHTML = `<p class="shared-message-text">${escapeHtml(result.text)}</p>`;
+          }
+        }
+      } else {
+        btn.disabled = false;
+        btn.classList.add('wrong-flash');
+        setTimeout(() => btn.classList.remove('wrong-flash'), 350);
+      }
+    } catch (err) {
+      btn.disabled = false;
+      alert(err.message || 'Could not check that guess.');
+    }
+  }
+
+  renderPuzzle();
+
+  // Append the "play the daily puzzle" CTA below the cryptogram once,
+  // outside the re-rendered puzzle card so it survives every re-render.
+  const cta = document.createElement('a');
+  cta.href = window.location.pathname;
+  cta.className = 'btn-secondary shared-message-cta';
+  cta.textContent = 'Play Daily Cryptogram →';
+  root.appendChild(cta);
+}
+
 async function renderSharedMessageIfPresent() {
   const match = window.location.hash.match(/^#\/m\/([A-Za-z0-9_-]+)$/);
   if (!match) return false;
+  const token = match[1];
   const root = document.getElementById('leaderboard-root');
   const puzzlePanel = document.getElementById('puzzle-panel');
   if (puzzlePanel) puzzlePanel.style.display = 'none';
   root.innerHTML = `<div class="lb-card"><div class="lb-skeleton-row"></div></div>`;
   try {
-    const res = await fetch(`${API}/api/messages/shared/${encodeURIComponent(match[1])}`);
+    const res = await fetch(`${API}/api/messages/shared/${encodeURIComponent(token)}`);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'This message link is no longer valid.');
-    root.innerHTML = `
-      <div class="lb-card shared-message-card">
-        <p class="modal-note">Message from</p>
-        <h2 class="modal-title">${escapeHtml(data.from_display_name)}</h2>
-        <p class="shared-message-text">${escapeHtml(data.text)}</p>
-        <a href="${window.location.pathname}" class="btn-secondary shared-message-cta">Play Daily Cryptogram →</a>
-      </div>`;
+    renderMessagePuzzle(root, token, data);
   } catch (err) {
     root.innerHTML = `<div class="lb-card"><p class="modal-note">${escapeHtml(err.message || 'This message link is no longer valid.')}</p><a href="${window.location.pathname}" class="btn-secondary">Go to Daily Cryptogram →</a></div>`;
   }
