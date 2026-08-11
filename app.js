@@ -134,6 +134,17 @@ function renderCipherDisplay() {
       el.appendChild(gap);
       continue;
     }
+    // Punctuation (apostrophes, commas, etc.) is never assigned a cipher
+    // letter — buildDailyPuzzle only maps A-Z. Render it plainly instead of
+    // falling through to PLAIN_TO_CIPHER[ch], which is undefined for these
+    // characters and previously rendered the literal text "undefined".
+    if (!PLAIN_TO_CIPHER[ch]) {
+      const box = document.createElement('div');
+      box.className = 'cipher-box';
+      box.innerHTML = `<span class="plain">${escapeHtml(ch)}</span>`;
+      el.appendChild(box);
+      continue;
+    }
     const cipherChar = PLAIN_TO_CIPHER[ch];
     const box = document.createElement('div');
     box.className = 'cipher-box';
@@ -295,11 +306,12 @@ function openFacebookShare() {
   const shareUrl = getShareUrl();
   const quote = "I'm playing Friday's cryptogram challenge \u2014 think you can beat my score?";
   const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}&quote=${encodeURIComponent(quote)}`;
-  const popup = window.open(fbUrl, 'fb-share-dialog', 'width=626,height=436,menubar=no,toolbar=no,status=no');
-  if (!popup) {
-    // Popup blocked — fall back to copying the link so the user can still invite friends.
-    copyInviteLinkFallback(shareUrl);
-  }
+  // Plain new-tab open (no custom popup window features) — fixed-size windows with
+  // menubar/toolbar disabled are the classic "popup ad" fingerprint that ad blockers
+  // and browser popup blockers target, even on a direct click. A normal target=_blank
+  // style open is treated like any other link and is far less likely to be blocked.
+  const popup = window.open(fbUrl, '_blank', 'noopener,noreferrer');
+  verifyPopupOpened(popup, shareUrl, () => copyInviteLinkFallback(shareUrl));
 }
 
 // Shares the player's just-earned, server-verified score — distinct from the
@@ -312,11 +324,26 @@ function shareScoreToFacebook() {
   const mistakeText = `${mistakeCount} mistake${mistakeCount === 1 ? '' : 's'}`;
   const quote = `I solved today's Daily Cryptogram in ${formatElapsed(elapsed_ms)} with ${mistakeText} \u2014 server-verified score: ${score.toLocaleString()} pts. Think you can beat me?`;
   const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}&quote=${encodeURIComponent(quote)}`;
-  const popup = window.open(fbUrl, 'fb-share-dialog', 'width=626,height=436,menubar=no,toolbar=no,status=no');
+  // Plain new-tab open (no custom popup window features) — see comment in
+  // openFacebookShare above for why this avoids being silently blocked.
+  const popup = window.open(fbUrl, '_blank', 'noopener,noreferrer');
+  verifyPopupOpened(popup, shareUrl, () => copyScoreShareFallback(shareUrl, quote));
+}
+
+// window.open() can return a non-null object even when the browser or an
+// extension silently blocks the popup, so `if (!popup)` alone misses real
+// blocks. Re-check `.closed` a beat later (after the blocker has had a
+// chance to act) and only then fall back to a clipboard copy.
+function verifyPopupOpened(popup, shareUrl, onBlocked) {
   if (!popup) {
-    // Popup blocked — fall back to copying a score summary so the brag isn't lost.
-    copyScoreShareFallback(shareUrl, quote);
+    onBlocked();
+    return;
   }
+  setTimeout(() => {
+    if (popup.closed || typeof popup.closed === 'undefined') {
+      onBlocked();
+    }
+  }, 300);
 }
 
 async function copyScoreShareFallback(shareUrl, quote) {
