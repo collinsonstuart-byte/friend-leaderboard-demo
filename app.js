@@ -9,8 +9,16 @@ const CHALLENGE_ID = 'demo-challenge-1';
 // No localStorage/cookies allowed in the sandboxed preview — this id is
 // generated fresh per page load and kept only in memory, exactly the
 // pattern used for visitor-scoped state in this environment.
-const VISITOR_ID = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()));
-let visitorAuthToken = null;
+//
+// EXCEPTION: returning from Stripe Checkout is a full top-level navigation,
+// which would otherwise wipe this identity and mint a brand new one,
+// breaking the ownership check on checkout-session-status. When the
+// backend's success/cancel redirect carries visitor_id + auth_token (see
+// create-checkout-session), restore the exact same identity instead of
+// generating a fresh one.
+const __returnParams = new URLSearchParams(window.location.search);
+let VISITOR_ID = __returnParams.get('visitor_id') || (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()));
+let visitorAuthToken = __returnParams.get('auth_token') || null;
 
 let session = null; // { nonce, issued_at, server_sig }
 let myUserId = null;
@@ -20,6 +28,7 @@ let mistakes = 0;
 let subscriptionActive = false;
 let subscriptionPrice = 0.99;
 let subscriptionPeriod = 'month';
+let stripeConfigured = true;
 
 const PUZZLE = {
   plaintext: 'KEEP GOING',
@@ -253,30 +262,84 @@ async function connectLeaderboardStream() {
 
 // --- Custom message-to-a-friend (gated by $0.99/month subscription) ----
 
-function showMessageToast(message) {
+function showToast(html, duration = 4000) {
   const container = document.getElementById('toast-container');
   const toast = document.createElement('div');
   toast.className = 'toast';
-  toast.innerHTML = `<strong>${escapeHtml(message.from_display_name)}</strong> sent you a message:<br/>${escapeHtml(message.text)}`;
+  toast.innerHTML = html;
   container.appendChild(toast);
   setTimeout(() => {
     toast.classList.add('toast-out');
     setTimeout(() => toast.remove(), 300);
-  }, 6000);
+  }, duration);
+}
+
+function showMessageToast(message) {
+  showToast(`<strong>${escapeHtml(message.from_display_name)}</strong> sent you a message:<br/>${escapeHtml(message.text)}`, 6000);
+}
+
+// --- Facebook share / invite friends ------------------------------------
+
+function getShareUrl() {
+  // Share a clean link to the challenge (no visitor/auth params) so
+  // invited friends land on a fresh page rather than inheriting this
+  // visitor's identity or an expired session_id param.
+  const url = new URL(window.location.href);
+  url.search = '';
+  url.hash = '';
+  return url.toString();
+}
+
+function openFacebookShare() {
+  const shareUrl = getShareUrl();
+  const quote = "I'm playing Friday's cryptogram challenge \u2014 think you can beat my score?";
+  const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}&quote=${encodeURIComponent(quote)}`;
+  const popup = window.open(fbUrl, 'fb-share-dialog', 'width=626,height=436,menubar=no,toolbar=no,status=no');
+  if (!popup) {
+    // Popup blocked — fall back to copying the link so the user can still invite friends.
+    copyInviteLinkFallback(shareUrl);
+  }
+}
+
+async function copyInviteLinkFallback(shareUrl) {
+  try {
+    await navigator.clipboard.writeText(shareUrl);
+    showToast('Popup blocked — invite link copied instead. Paste it anywhere to invite a friend!');
+  } catch {
+    showToast(`Copy this link to invite a friend: <br/><code>${escapeHtml(shareUrl)}</code>`, 8000);
+  }
 }
 
 function closeMessageModal() {
   document.getElementById('message-modal').classList.add('hidden');
 }
 
-function renderSubscribeGate(toDisplayName, onSubscribed) {
+function renderSubscribeGate(toUserId, toDisplayName, onSubscribed) {
   const body = document.getElementById('message-modal-body');
   body.innerHTML = `
     <h2 class="modal-title">Message ${escapeHtml(toDisplayName)}</h2>
     <p class="modal-copy">Sending custom messages to friends is a subscriber feature — $${subscriptionPrice.toFixed(2)}/${subscriptionPeriod}.</p>
-    <p class="modal-note">This demo isn't wired up to real PayPal billing yet, so this button simulates a completed subscription for testing — no real charge happens.</p>
-    <button id="subscribe-demo-btn" class="btn-primary">Simulate subscribe (demo) — $${subscriptionPrice.toFixed(2)}/${subscriptionPeriod}</button>
+    <p class="modal-note">This charges a real card through Stripe's <strong>test mode</strong> — no actual money moves. Use test card <code>4242 4242 4242 4242</code>, any future expiry date, any CVC, any ZIP.</p>
+    <button id="subscribe-stripe-btn" class="btn-primary" ${stripeConfigured ? '' : 'disabled'}>Subscribe with card — $${subscriptionPrice.toFixed(2)}/${subscriptionPeriod}</button>
+    ${stripeConfigured ? '' : '<p class="modal-note">Stripe checkout isn\'t configured on this server right now.</p>'}
+    <button id="subscribe-demo-btn" class="btn-secondary">Or simulate for testing (no card, no real activation)</button>
   `;
+  document.getElementById('subscribe-stripe-btn').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.textContent = 'Redirecting to Stripe…';
+    try {
+      const result = await api('/api/create-checkout-session', {
+        method: 'POST',
+        body: JSON.stringify({ to_user_id: toUserId, to_display_name: toDisplayName }),
+      });
+      window.location.href = result.checkout_url;
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = `Subscribe with card — $${subscriptionPrice.toFixed(2)}/${subscriptionPeriod}`;
+      alert(`Could not start checkout: ${err.message}`);
+    }
+  });
   document.getElementById('subscribe-demo-btn').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     btn.disabled = true;
@@ -287,7 +350,7 @@ function renderSubscribeGate(toDisplayName, onSubscribed) {
       onSubscribed();
     } catch (err) {
       btn.disabled = false;
-      btn.textContent = `Simulate subscribe (demo) — $${subscriptionPrice.toFixed(2)}/${subscriptionPeriod}`;
+      btn.textContent = 'Or simulate for testing (no card, no real activation)';
       alert(`Could not activate: ${err.message}`);
     }
   });
@@ -340,7 +403,7 @@ function openMessageModal(toUserId, toDisplayName) {
   if (subscriptionActive) {
     renderComposeForm(toUserId, toDisplayName);
   } else {
-    renderSubscribeGate(toDisplayName, () => renderComposeForm(toUserId, toDisplayName));
+    renderSubscribeGate(toUserId, toDisplayName, () => renderComposeForm(toUserId, toDisplayName));
   }
 }
 
@@ -358,6 +421,29 @@ async function init() {
     subscriptionActive = !!subStatus.active;
     subscriptionPrice = subStatus.price_usd;
     subscriptionPeriod = subStatus.period;
+    stripeConfigured = !!subStatus.stripe_configured;
+  }
+
+  // Returning from Stripe Checkout: verify the session immediately instead
+  // of waiting on webhook delivery timing, then resume the compose modal
+  // for whichever friend the visitor was messaging before they subscribed.
+  const returnParams = new URLSearchParams(window.location.search);
+  if (returnParams.has('subscribed')) {
+    const sessionId = returnParams.get('session_id');
+    if (returnParams.get('subscribed') === '1' && sessionId) {
+      try {
+        const statusResult = await api(`/api/checkout-session-status?session_id=${encodeURIComponent(sessionId)}`);
+        subscriptionActive = !!statusResult.active;
+      } catch (err) {
+        console.error('Could not verify checkout session:', err);
+      }
+    }
+    const toUserId = returnParams.get('to_user_id');
+    const toDisplayName = returnParams.get('to_display_name');
+    history.replaceState({}, '', window.location.pathname);
+    if (toUserId && toDisplayName) {
+      window.__pendingMessageTarget = { toUserId, toDisplayName };
+    }
   }
 
   const initial = await api(`/api/leaderboard?challenge_id=${CHALLENGE_ID}`);
@@ -366,10 +452,18 @@ async function init() {
 
   connectLeaderboardStream().catch((err) => console.error('Could not connect to leaderboard updates:', err));
 
+  if (window.__pendingMessageTarget) {
+    const { toUserId, toDisplayName } = window.__pendingMessageTarget;
+    delete window.__pendingMessageTarget;
+    openMessageModal(toUserId, toDisplayName);
+  }
+
   document.getElementById('message-modal-close').addEventListener('click', closeMessageModal);
   document.getElementById('message-modal').addEventListener('click', (e) => {
     if (e.target.id === 'message-modal') closeMessageModal();
   });
+
+  document.getElementById('share-fb-btn').addEventListener('click', openFacebookShare);
 
   document.getElementById('start-btn').addEventListener('click', async () => {
     const btn = document.getElementById('start-btn');

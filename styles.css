@@ -40,6 +40,7 @@ body {
   justify-content: space-between;
   padding: 18px 0 12px;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .logo {
@@ -50,6 +51,31 @@ body {
   font-size: 1rem;
   color: var(--accent-dark);
 }
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-share {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: white;
+  background: #1877f2;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+.btn-share:hover { background: #1461c9; }
+.btn-share:active { transform: scale(0.96); }
+.btn-share svg { flex-shrink: 0; }
 
 .badge {
   font-size: 0.68rem;
@@ -138,6 +164,24 @@ body {
 .btn-primary:hover { background: var(--accent-dark); }
 .btn-primary:active { transform: scale(0.97); }
 .btn-primary:disabled { opacity: 0.5; cursor: default; }
+
+.btn-secondary {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.btn-secondary:hover { background: var(--bg); color: var(--text); }
+.btn-secondary:disabled { opacity: 0.5; cursor: default; }
 
 .hidden { display: none !important; }
 
