@@ -319,6 +319,10 @@ body {
   margin: 0;
 }
 
+.result-share-btn {
+  margin-top: 14px;
+}
+
 .page-footer {
   margin-top: 8px;
   font-size: 0.72rem;

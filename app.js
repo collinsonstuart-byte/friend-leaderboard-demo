@@ -31,6 +31,7 @@ let liveMode = false; // true once the server is wired to real (sk_live_) Stripe
 // and the same substitution cipher — the server is the source of truth,
 // this is just filled in once at load time before the start screen shows.
 let PUZZLE = { plaintext: '', author: '', rows: [] };
+let lastScoreResult = null;
 let PLAIN_TO_CIPHER = {};
 const solvedLetters = new Set();
 
@@ -226,6 +227,10 @@ async function onPuzzleComplete() {
     });
     const authorLine = PUZZLE.author ? `<br/><span class="result-quote-author">\u2014 ${escapeHtml(PUZZLE.author)}</span>` : '';
     resultCopy.innerHTML = `Solved in <strong>${formatElapsed(result.elapsed_ms)}</strong> with <strong>${result.mistakes}</strong> mistake${result.mistakes === 1 ? '' : 's'}.<br/>Server-verified score: <strong>${result.score.toLocaleString()} pts</strong>${authorLine}`;
+    lastScoreResult = result;
+    const shareBtn = document.getElementById('share-score-fb-btn');
+    shareBtn.classList.remove('hidden');
+    shareBtn.onclick = shareScoreToFacebook;
   } catch (err) {
     resultCopy.textContent = `Submission rejected: ${err.message}`;
   }
@@ -294,6 +299,33 @@ function openFacebookShare() {
   if (!popup) {
     // Popup blocked — fall back to copying the link so the user can still invite friends.
     copyInviteLinkFallback(shareUrl);
+  }
+}
+
+// Shares the player's just-earned, server-verified score — distinct from the
+// generic "invite a friend" share above, since this brags about an actual
+// result (time + mistakes + points) rather than pitching the game cold.
+function shareScoreToFacebook() {
+  if (!lastScoreResult) return;
+  const shareUrl = getShareUrl();
+  const { elapsed_ms, mistakes: mistakeCount, score } = lastScoreResult;
+  const mistakeText = `${mistakeCount} mistake${mistakeCount === 1 ? '' : 's'}`;
+  const quote = `I solved today's Daily Cryptogram in ${formatElapsed(elapsed_ms)} with ${mistakeText} \u2014 server-verified score: ${score.toLocaleString()} pts. Think you can beat me?`;
+  const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}&quote=${encodeURIComponent(quote)}`;
+  const popup = window.open(fbUrl, 'fb-share-dialog', 'width=626,height=436,menubar=no,toolbar=no,status=no');
+  if (!popup) {
+    // Popup blocked — fall back to copying a score summary so the brag isn't lost.
+    copyScoreShareFallback(shareUrl, quote);
+  }
+}
+
+async function copyScoreShareFallback(shareUrl, quote) {
+  const text = `${quote} ${shareUrl}`;
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast('Popup blocked — your score brag was copied instead. Paste it anywhere to share!');
+  } catch {
+    showToast(`Copy this to share your score: <br/><code>${escapeHtml(text)}</code>`, 8000);
   }
 }
 
