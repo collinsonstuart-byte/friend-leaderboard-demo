@@ -25,6 +25,7 @@ let subscriptionActive = false;
 let subscriptionPrice = 0.99;
 let subscriptionPeriod = 'month';
 let stripeConfigured = true;
+let liveMode = false; // true once the server is wired to real (sk_live_) Stripe keys
 
 const PUZZLE = {
   plaintext: 'KEEP GOING',
@@ -194,10 +195,14 @@ function renderPitchPanel() {
         <li><span class="pitch-feature-icon">💬</span><span>Challenge one friend directly — send them your time and a dare, your way.</span></li>
       </ul>
       <button id="challenge-friend-btn" class="btn-primary pitch-cta" type="button">Challenge a Friend →</button>
-      <p class="pitch-note">$${subscriptionPrice.toFixed(2)}/${subscriptionPeriod} to send unlimited challenges. Cancel anytime.</p>
+      <p class="pitch-note">$${subscriptionPrice.toFixed(2)}/${subscriptionPeriod} to send unlimited challenges. Cancel anytime. <a href="#" id="pitch-terms-link" class="pitch-terms-link">Terms &amp; refund policy</a></p>
     </div>
   `;
   document.getElementById('challenge-friend-btn').addEventListener('click', () => openMessageModal());
+  document.getElementById('pitch-terms-link').addEventListener('click', (e) => {
+    e.preventDefault();
+    openTermsModal();
+  });
 }
 
 // --- Custom message-to-a-friend (gated by $0.99/month subscription) ----
@@ -277,14 +282,24 @@ function closeMessageModal() {
 
 function renderSubscribeGate(prefillName, onSubscribed) {
   const body = document.getElementById('message-modal-body');
+  const modeNote = liveMode
+    ? `<p class="modal-note">This charges your card <strong>$${escapeHtml(subscriptionPrice.toFixed(2))}/${escapeHtml(subscriptionPeriod)}</strong> for real, billed by Stripe, and renews automatically until cancelled. Read the <a href="#" id="gate-terms-link">terms &amp; refund policy</a> before subscribing.</p>`
+    : `<p class="modal-note">This charges a real card through Stripe's <strong>test mode</strong> — no actual money moves. Use test card <code>4242 4242 4242 4242</code>, any future expiry date, any CVC, any ZIP.</p>`;
   body.innerHTML = `
     <h2 class="modal-title">Challenge a Friend</h2>
     <p class="modal-copy">Sending a challenge link to a friend is a subscriber feature — $${subscriptionPrice.toFixed(2)}/${subscriptionPeriod} for unlimited challenges.</p>
-    <p class="modal-note">This charges a real card through Stripe's <strong>test mode</strong> — no actual money moves. Use test card <code>4242 4242 4242 4242</code>, any future expiry date, any CVC, any ZIP.</p>
+    ${modeNote}
     <button id="subscribe-stripe-btn" class="btn-primary" ${stripeConfigured ? '' : 'disabled'}>Subscribe with card — $${subscriptionPrice.toFixed(2)}/${subscriptionPeriod}</button>
     ${stripeConfigured ? '' : '<p class="modal-note">Stripe checkout isn\'t configured on this server right now.</p>'}
-    <button id="subscribe-demo-btn" class="btn-secondary">Or simulate for testing (no card, no real activation)</button>
+    ${liveMode ? '' : '<button id="subscribe-demo-btn" class="btn-secondary">Or simulate for testing (no card, no real activation)</button>'}
   `;
+  const gateTermsLink = document.getElementById('gate-terms-link');
+  if (gateTermsLink) {
+    gateTermsLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      openTermsModal(() => renderSubscribeGate(prefillName, onSubscribed));
+    });
+  }
   document.getElementById('subscribe-stripe-btn').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     btn.disabled = true;
@@ -301,20 +316,23 @@ function renderSubscribeGate(prefillName, onSubscribed) {
       alert(`Could not start checkout: ${err.message}`);
     }
   });
-  document.getElementById('subscribe-demo-btn').addEventListener('click', async (e) => {
-    const btn = e.currentTarget;
-    btn.disabled = true;
-    btn.textContent = 'Activating…';
-    try {
-      const result = await api('/api/subscribe-demo', { method: 'POST' });
-      subscriptionActive = !!result.active;
-      onSubscribed();
-    } catch (err) {
-      btn.disabled = false;
-      btn.textContent = 'Or simulate for testing (no card, no real activation)';
-      alert(`Could not activate: ${err.message}`);
-    }
-  });
+  const demoBtn = document.getElementById('subscribe-demo-btn');
+  if (demoBtn) {
+    demoBtn.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      btn.textContent = 'Activating…';
+      try {
+        const result = await api('/api/subscribe-demo', { method: 'POST' });
+        subscriptionActive = !!result.active;
+        onSubscribed();
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = 'Or simulate for testing (no card, no real activation)';
+        alert(`Could not activate: ${err.message}`);
+      }
+    });
+  }
 }
 
 function renderComposeForm(prefillName) {
@@ -392,6 +410,34 @@ function openMessageModal(prefillName) {
   }
 }
 
+// --- Terms & refund policy ----------------------------------------------
+// Plain-language summary shown before anyone is asked to pay. Reuses the
+// same modal shell as the subscribe/compose flow; "Back" returns to
+// whatever was showing before (the subscribe gate, most commonly).
+function openTermsModal(onBack) {
+  const modal = document.getElementById('message-modal');
+  modal.classList.remove('hidden');
+  const body = document.getElementById('message-modal-body');
+  body.innerHTML = `
+    <h2 class="modal-title">Terms &amp; refund policy</h2>
+    <div class="terms-copy">
+      <p><strong>What you're buying.</strong> $${subscriptionPrice.toFixed(2)}/${subscriptionPeriod}, billed by Stripe, gets you unlimited friend-challenge messages on Daily Cryptogram. The subscription renews automatically each ${subscriptionPeriod} until you cancel.</p>
+      <p><strong>Cancelling.</strong> Cancel anytime from the confirmation email Stripe sends after checkout, or email us and we'll cancel it for you — no phone calls, no retention flow. Cancelling stops future renewals; it doesn't retroactively refund a period already paid for.</p>
+      <p><strong>Refunds.</strong> If you're charged in error, didn't mean to subscribe, or something about the feature didn't work as described, email us within 14 days of the charge and we'll refund it in full, no questions asked. After 14 days we'll still hear you out, but refunds aren't guaranteed.</p>
+      <p><strong>Contact.</strong> <a href="mailto:collinson.stuart@gmail.com">collinson.stuart@gmail.com</a></p>
+      <p class="terms-note">Daily Cryptogram is an independent hobby project, not a company with a support team — email response times are best-effort.</p>
+    </div>
+    <button id="terms-back-btn" class="btn-secondary">← Back</button>
+  `;
+  document.getElementById('terms-back-btn').addEventListener('click', () => {
+    if (onBack) {
+      onBack();
+    } else {
+      closeMessageModal();
+    }
+  });
+}
+
 // --- Bootstrap ---------------------------------------------------------
 
 // Shared-message links look like #/m/<token> and need no identity/auth —
@@ -435,6 +481,20 @@ async function init() {
     subscriptionPrice = subStatus.price_usd;
     subscriptionPeriod = subStatus.period;
     stripeConfigured = !!subStatus.stripe_configured;
+    liveMode = !!subStatus.live_mode;
+  }
+  const footer = document.getElementById('page-footer');
+  if (footer) {
+    footer.innerHTML = liveMode
+      ? 'Every score is signed and verified server-side — no editing your time from the console. Challenge subscriptions are billed for real via Stripe. <a href="#" id="footer-terms-link">Terms &amp; refund policy</a>.'
+      : 'Every score is signed and verified server-side — no editing your time from the console. Challenge subscriptions run on Stripe in test mode for this preview, so checkout is real but no money moves.';
+    const footerTermsLink = document.getElementById('footer-terms-link');
+    if (footerTermsLink) {
+      footerTermsLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        openTermsModal();
+      });
+    }
   }
 
   // Returning from Stripe Checkout: verify the session immediately instead
